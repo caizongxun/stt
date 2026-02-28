@@ -1,6 +1,6 @@
 """
-V5 Trainer - Dual Model System
-V5訓練器 - 做多/做空分離
+V5 Trainer - Fix Class Imbalance
+V5訓練器 - 修復樣本不平衡
 """
 import pandas as pd
 import numpy as np
@@ -23,22 +23,18 @@ class V5Trainer:
     
     def train(self, df: pd.DataFrame) -> dict:
         print("\n" + "="*60)
-        print("V5 TRAINING - Dual Model System")
+        print("V5 TRAINING - Dual Model with Class Balance")
         print("="*60)
         
-        # 1. 特徵工程
         feature_engine = V5FeatureEngine(self.config)
         df = feature_engine.generate(df)
         
-        # 2. 標籤生成
         label_gen = V5LabelGenerator(self.config)
         df = label_gen.generate(df)
         
-        # 3. 準備數據
         self.feature_names = feature_engine.get_feature_names(df)
         X = self._prepare_features(df)
         
-        # 4. 分離做多/做空標籤
         y_long = df['label_long'].copy()
         y_short = df['label_short'].copy()
         
@@ -47,36 +43,33 @@ class V5Trainer:
         y_long = y_long[valid]
         y_short = y_short[valid]
         
-        # 5. 分割數據
         X_train, X_val, X_oos, y_long_train, y_long_val, y_long_oos, y_short_train, y_short_val, y_short_oos = \
             self._split_data(X, y_long, y_short)
+        
+        long_pos_ratio = y_long_train.sum() / len(y_long_train)
+        short_pos_ratio = y_short_train.sum() / len(y_short_train)
         
         print(f"\n[Data Split]")
         print(f"  Train: {len(X_train)}")
         print(f"  Val: {len(X_val)}")
         print(f"  OOS: {len(X_oos)}")
-        print(f"  Long opportunities: {y_long_train.sum()}")
-        print(f"  Short opportunities: {y_short_train.sum()}")
+        print(f"  Long pos: {long_pos_ratio*100:.2f}%")
+        print(f"  Short pos: {short_pos_ratio*100:.2f}%")
         
-        # 6. 訓練做多模型
         print("\n[Training LONG models]")
         self.long_models = self._train_ensemble(X_train, y_long_train, X_val, y_long_val, "LONG")
         
-        # 7. 訓練做空模型
         print("\n[Training SHORT models]")
         self.short_models = self._train_ensemble(X_train, y_short_train, X_val, y_short_val, "SHORT")
         
-        # 8. 評估
         long_val = self._evaluate(self.long_models, X_val, y_long_val, "LONG Val")
         long_oos = self._evaluate(self.long_models, X_oos, y_long_oos, "LONG OOS")
         short_val = self._evaluate(self.short_models, X_val, y_short_val, "SHORT Val")
         short_oos = self._evaluate(self.short_models, X_oos, y_short_oos, "SHORT OOS")
         
-        # 9. 特徵重要性
-        long_importance = self._get_feature_importance(self.long_models, "LONG")
-        short_importance = self._get_feature_importance(self.short_models, "SHORT")
+        long_importance = self._get_feature_importance(self.long_models)
+        short_importance = self._get_feature_importance(self.short_models)
         
-        # 10. 保存
         model_path = self._save_models()
         
         results = {
@@ -87,11 +80,13 @@ class V5Trainer:
             'long_feature_importance': long_importance,
             'short_feature_importance': short_importance,
             'model_path': model_path,
-            'feature_count': len(self.feature_names)
+            'feature_count': len(self.feature_names),
+            'long_pos_ratio': float(long_pos_ratio),
+            'short_pos_ratio': float(short_pos_ratio)
         }
         
         print("\n" + "="*60)
-        print("DUAL MODEL TRAINING COMPLETE")
+        print("TRAINING COMPLETE")
         print("="*60)
         
         return results
@@ -113,6 +108,16 @@ class V5Trainer:
                 y_short.iloc[:train_end], y_short.iloc[train_end:val_end], y_short.iloc[val_end:])
     
     def _train_ensemble(self, X_train, y_train, X_val, y_val, name):
+        neg_count = (y_train == 0).sum()
+        pos_count = (y_train == 1).sum()
+        
+        if pos_count == 0:
+            print(f"  [WARNING] {name} no positive samples")
+            return []
+        
+        scale_pos_weight = neg_count / pos_count
+        print(f"  Scale: {scale_pos_weight:.1f}")
+        
         models = []
         for i in range(self.config.ensemble_models):
             sample_idx = np.random.choice(len(X_train), int(len(X_train) * 0.9), replace=False)
@@ -126,35 +131,46 @@ class V5Trainer:
                 colsample_bytree=self.config.colsample_bytree,
                 min_child_weight=self.config.min_child_weight,
                 gamma=self.config.gamma,
+                scale_pos_weight=scale_pos_weight,
                 random_state=42 + i,
                 n_jobs=-1
             )
             
             model.fit(X_sub, y_sub, eval_set=[(X_val, y_val)], verbose=False)
             models.append(model)
-            print(f"  {name} Model {i+1}/{self.config.ensemble_models}")
+            print(f"  {name} {i+1}/{self.config.ensemble_models}")
         return models
     
     def _evaluate(self, models, X, y, name):
+        if len(models) == 0:
+            return {'accuracy': 0, 'precision': 0, 'recall': 0, 'auc': 0, 'threshold': 0}
+        
         probas = [m.predict_proba(X)[:, 1] for m in models]
         y_proba = np.mean(probas, axis=0)
-        y_pred = (y_proba >= 0.5).astype(int)
+        
+        pos_ratio = y.sum() / len(y)
+        threshold = min(0.5, max(0.1, pos_ratio * 3))
+        
+        y_pred = (y_proba >= threshold).astype(int)
         
         metrics = {
             'accuracy': accuracy_score(y, y_pred),
             'precision': precision_score(y, y_pred, zero_division=0),
             'recall': recall_score(y, y_pred, zero_division=0),
-            'auc': roc_auc_score(y, y_proba)
+            'auc': roc_auc_score(y, y_proba),
+            'threshold': threshold
         }
         
         cm = confusion_matrix(y, y_pred)
         if cm.shape == (2, 2):
             metrics['tn'], metrics['fp'], metrics['fn'], metrics['tp'] = cm.ravel()
         
-        print(f"\n[{name}] AUC:{metrics['auc']:.3f} P:{metrics['precision']:.3f} R:{metrics['recall']:.3f}")
+        print(f"[{name}] T:{threshold:.2f} AUC:{metrics['auc']:.3f} P:{metrics['precision']:.3f} R:{metrics['recall']:.3f}")
         return metrics
     
-    def _get_feature_importance(self, models, name):
+    def _get_feature_importance(self, models):
+        if len(models) == 0:
+            return []
         importances = np.mean([m.feature_importances_ for m in models], axis=0)
         feature_imp = list(zip(self.feature_names, importances))
         feature_imp.sort(key=lambda x: x[1], reverse=True)
@@ -173,5 +189,5 @@ class V5Trainer:
         joblib.dump(self.config.to_dict(), model_dir / "config.pkl")
         joblib.dump(self.feature_names, model_dir / "features.pkl")
         
-        print(f"\n[Models saved: {model_dir}]")
+        print(f"[Saved: {model_dir}]")
         return str(model_dir)
