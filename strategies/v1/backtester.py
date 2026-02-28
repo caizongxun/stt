@@ -1,6 +1,6 @@
 """
-V1 Backtester - Synced
-V1回測模組 - 同步版
+V1 Backtester - With Probability Filter
+V1回測模組 - 添加概率篩選
 """
 import pandas as pd
 import numpy as np
@@ -15,13 +15,18 @@ class Backtester:
         self.config = config
         self.trades = []
         self.equity_curve = []
+        self.probability_threshold = 0.5  # 只交易高概率信號
     
     def run(self, model, df: pd.DataFrame, feature_names: list) -> dict:
         df = self._prepare_data(df, feature_names)
         
         df_features = df[feature_names]
-        df['signal'] = model.predict(df_features)
+        df['signal_raw'] = model.predict(df_features)
         df['signal_proba'] = model.predict_proba(df_features).max(axis=1)
+        
+        # 添加概率篩選
+        df['signal'] = df['signal_raw']
+        df.loc[df['signal_proba'] < self.probability_threshold, 'signal'] = 0
         
         self._simulate_trading(df)
         metrics = self._calculate_metrics()
@@ -34,6 +39,7 @@ class Backtester:
                 "end_date": str(df['open_time'].iloc[-1]),
                 "total_bars": len(df),
                 "backtest_days": self.config.backtest_days,
+                "probability_threshold": self.probability_threshold,
                 "backtest_date": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             },
             "trading_params": {
@@ -52,7 +58,6 @@ class Backtester:
     def _prepare_data(self, df: pd.DataFrame, feature_names: list) -> pd.DataFrame:
         df = df.copy()
         
-        # 與trainer一致的特徵工程
         df['returns'] = df['close'].pct_change()
         df['log_returns'] = np.log(df['close'] / df['close'].shift(1))
         
@@ -210,17 +215,19 @@ class Backtester:
     def _generate_backtest_suggestions(self, metrics: dict) -> list:
         suggestions = []
         if metrics['total_return_pct'] < 0:
-            suggestions.append({"issue": "negative_return", "description": f"總報酬為負({metrics['total_return_pct']:.2f}%)", "recommendation": "重新訓練"})
+            suggestions.append({"issue": "negative_return", "description": f"總報酬為負({metrics['total_return_pct']:.2f}%)", "recommendation": "重新訓練並提高閘值"})
         if metrics['win_rate'] < 40:
-            suggestions.append({"issue": "low_win_rate", "description": f"勝率過低({metrics['win_rate']:.1f}%)", "recommendation": "優化進場"})
+            suggestions.append({"issue": "low_win_rate", "description": f"勝率過低({metrics['win_rate']:.1f}%)", "recommendation": "提高probability_threshold"})
         if metrics['profit_factor'] < 1.0:
-            suggestions.append({"issue": "low_profit_factor", "description": f"盈虧比<1({metrics['profit_factor']:.2f})", "recommendation": "調整止盈止損"})
+            suggestions.append({"issue": "low_profit_factor", "description": f"盈虧比<1({metrics['profit_factor']:.2f})", "recommendation": "提高label_threshold"})
         if metrics['max_drawdown'] > 30:
-            suggestions.append({"issue": "high_drawdown", "description": f"回撤過大({metrics['max_drawdown']:.1f}%)", "recommendation": "降低槓桿"})
+            suggestions.append({"issue": "high_drawdown", "description": f"回撤過大({metrics['max_drawdown']:.1f}%)", "recommendation": "降低槓桿或減少交易"})
         if metrics['sharpe_ratio'] < 1.0:
             suggestions.append({"issue": "low_sharpe", "description": f"Sharpe過低({metrics['sharpe_ratio']:.2f})", "recommendation": "優化風險調整"})
         if metrics['total_trades'] < 10:
-            suggestions.append({"issue": "few_trades", "description": f"交易過少({metrics['total_trades']})", "recommendation": "放寬條件"})
+            suggestions.append({"issue": "few_trades", "description": f"交易過少({metrics['total_trades']})", "recommendation": "降低probability_threshold"})
+        if metrics['total_trades'] > 500:
+            suggestions.append({"issue": "too_many_trades", "description": f"交易過多({metrics['total_trades']})", "recommendation": "提高probability_threshold或label_threshold"})
         if not suggestions:
             suggestions.append({"issue": "none", "description": "回測良好", "recommendation": "可進行更多測試"})
         return suggestions
