@@ -15,12 +15,12 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 def render():
-    st.header("🎯 V1 Strategy - LightGBM Baseline")
+    st.header("V1 Strategy - LightGBM Baseline")
     st.info("""
     **特點:** 模型: LightGBM | 特點: 快速穩定 | 適用: 初學者 | 訓練時間: 2-5分鐘
     """)
     
-    tab1, tab2, tab3 = st.tabs(["📊 訓練", "📈 回測", "📝 說明"])
+    tab1, tab2, tab3 = st.tabs(["訓練", "回測", "說明"])
     
     with tab1:
         render_training()
@@ -70,7 +70,7 @@ def render_training():
                 with st.spinner("訓練中..."):
                     results = trainer.train(df)
                 
-                st.success("✅ 訓練完成!")
+                st.success("[OK] 訓練完成!")
                 st.json(results)
                 st.balloons()
             
@@ -90,7 +90,6 @@ def render_training():
 def render_backtesting():
     st.subheader("策略回測")
     
-    # 獲取所有模型
     models_dir = Path('models')
     if not models_dir.exists():
         st.warning("沒有找到模型，請先訓練模型")
@@ -107,13 +106,11 @@ def render_backtesting():
     with col1:
         st.markdown("### 回測參數")
         
-        # 模型選擇
         model_names = [p.name for p in model_paths]
         selected_model = st.selectbox("選擇模型", model_names)
         
         st.markdown("---")
         
-        # 回測參數
         backtest_params = GUIComponents.render_backtest_params()
         
         st.markdown("---")
@@ -127,32 +124,27 @@ def render_backtesting():
             model_path = models_dir / selected_model
             
             try:
-                # 加載模型
                 with st.spinner("加載模型..."):
                     model = joblib.load(model_path / 'model.pkl')
                     config_dict = joblib.load(model_path / 'config.pkl')
                     feature_names = joblib.load(model_path / 'features.pkl')
                     
-                    # 更新回測參數
                     config_dict.update(backtest_params)
                     config = V1Config(**config_dict)
                     
-                    st.success(f"✅ 模型加載完成: {selected_model}")
+                    st.success(f"[OK] 模型加載完成: {selected_model}")
                 
-                # 加載數據
                 with st.spinner("加載數據..."):
                     loader = DataLoader()
                     df = loader.load_klines(config.symbol, config.timeframe)
-                    st.success(f"✅ 加載 {len(df)} 筆數據")
+                    st.success(f"[OK] 加載 {len(df)} 筆數據")
                 
-                # 執行回測
                 with st.spinner("回測中..."):
                     backtester = Backtester(config)
                     results = backtester.run(model, df, feature_names)
                 
-                st.success("✅ 回測完成!")
+                st.success("[OK] 回測完成!")
                 
-                # 顯示結果
                 display_backtest_results(results)
                 
             except Exception as e:
@@ -168,11 +160,9 @@ def render_backtesting():
             """)
 
 def display_backtest_results(results: dict):
-    """顯示回測結果"""
     metrics = results['performance_metrics']
     
-    # 關鍵指標
-    st.markdown("### 📊 關鍵指標")
+    st.markdown("### 關鍵指標")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -191,8 +181,7 @@ def display_backtest_results(results: dict):
         st.metric("最大回撤", f"{metrics['max_drawdown']:.2f}%")
         st.metric("最終資金", f"{metrics['final_capital']:.2f}")
     
-    # 權益曲線
-    st.markdown("### 💹 權益曲線")
+    st.markdown("### 權益曲線")
     equity_data = results['equity_curve']
     if equity_data:
         df_equity = pd.DataFrame(equity_data)
@@ -216,12 +205,11 @@ def display_backtest_results(results: dict):
         
         st.plotly_chart(fig, use_container_width=True)
     
-    # 詳細結果
-    with st.expander("📊 查看詳細結果"):
+    with st.expander("查看詳細結果"):
         st.json(results)
 
 def render_info():
-    st.subheader("📝 V1策略說明")
+    st.subheader("V1策略說明")
     
     st.markdown("""
     ## 策略概述
