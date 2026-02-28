@@ -1,6 +1,6 @@
 """
-V5 Feature Engineering
-V5特徵工程 - 價格導向
+V5 Feature Engineering - Enhanced
+V5特徵工程 - 增強版
 """
 import pandas as pd
 import numpy as np
@@ -8,162 +8,153 @@ import talib
 
 class V5FeatureEngine:
     """
-    純價格預測特徵
-    不用複雜指標,只用最有效的
+    增強版特徵工程
+    添加: 型態識別 + 支撓壓力 + 成交量突變
     """
     
     def __init__(self, config):
         self.config = config
     
     def generate(self, df: pd.DataFrame) -> pd.DataFrame:
-        """生成所有特徵"""
         df = df.copy()
+        print("[V5 Features Enhanced]")
         
-        print("[V5 Features]")
-        
-        # 1. 價格特徵
         if self.config.use_price_features:
             df = self._add_price_features(df)
-            print("  + Price features")
+            print("  + Price")
         
-        # 2. 成交量特徵
         if self.config.use_volume_features:
             df = self._add_volume_features(df)
-            print("  + Volume features")
+            print("  + Volume")
         
-        # 3. 波動率特徵
         if self.config.use_volatility_features:
             df = self._add_volatility_features(df)
-            print("  + Volatility features")
+            print("  + Volatility")
         
-        # 4. 動量特徵
         if self.config.use_momentum_features:
             df = self._add_momentum_features(df)
-            print("  + Momentum features")
+            print("  + Momentum")
+        
+        df = self._add_pattern_features(df)
+        print("  + Patterns")
+        
+        df = self._add_support_resistance(df)
+        print("  + Support/Resistance")
+        
+        df = self._add_volume_surge(df)
+        print("  + Volume Surge")
         
         return df
     
-    def _add_price_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """價格特徵"""
+    def _add_price_features(self, df):
         for window in self.config.lookback_windows:
-            # 報酬率
             df[f'return_{window}'] = df['close'].pct_change(window)
-            
-            # 距離均線
             ma = df['close'].rolling(window).mean()
             df[f'dist_ma_{window}'] = (df['close'] - ma) / ma
-            
-            # 價格位置(區間百分比)
             roll_min = df['low'].rolling(window).min()
             roll_max = df['high'].rolling(window).max()
             df[f'price_position_{window}'] = (df['close'] - roll_min) / (roll_max - roll_min + 1e-10)
         
-        # K線實體大小
         df['body_size'] = abs(df['close'] - df['open']) / df['open']
         df['upper_wick'] = (df['high'] - df[['open', 'close']].max(axis=1)) / df['open']
         df['lower_wick'] = (df[['open', 'close']].min(axis=1) - df['low']) / df['open']
-        
         return df
     
-    def _add_volume_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """成交量特徵"""
+    def _add_volume_features(self, df):
         for window in self.config.lookback_windows:
-            # 成交量比率
             vol_ma = df['volume'].rolling(window).mean()
             df[f'volume_ratio_{window}'] = df['volume'] / (vol_ma + 1e-10)
-            
-            # 成交量趨勢
             df[f'volume_trend_{window}'] = df['volume'].pct_change(window)
-        
-        # 價量關係
         df['price_volume_corr'] = df['close'].pct_change().rolling(20).corr(df['volume'].pct_change())
-        
         return df
     
-    def _add_volatility_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """波動率特徵"""
-        # ATR
+    def _add_volatility_features(self, df):
         df['atr'] = talib.ATR(df['high'], df['low'], df['close'], timeperiod=14)
         df['atr_pct'] = df['atr'] / df['close']
-        
         for window in [10, 20]:
-            # 波動率
             df[f'volatility_{window}'] = df['close'].pct_change().rolling(window).std()
-            
-            # 高低幅度
             df[f'range_{window}'] = (df['high'].rolling(window).max() - df['low'].rolling(window).min()) / df['close']
         
-        # Bollinger Bands
-        bb_period = 20
-        bb_std = 2
+        bb_period, bb_std = 20, 2
         ma = df['close'].rolling(bb_period).mean()
         std = df['close'].rolling(bb_period).std()
         df['bb_upper'] = ma + bb_std * std
         df['bb_lower'] = ma - bb_std * std
         df['bb_position'] = (df['close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'] + 1e-10)
         df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / ma
-        
         return df
     
-    def _add_momentum_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """動量特徵"""
-        # RSI
+    def _add_momentum_features(self, df):
         df['rsi'] = talib.RSI(df['close'], timeperiod=14)
         df['rsi_fast'] = talib.RSI(df['close'], timeperiod=7)
-        
-        # MACD
         macd, signal, hist = talib.MACD(df['close'], fastperiod=12, slowperiod=26, signalperiod=9)
         df['macd'] = macd
         df['macd_signal'] = signal
         df['macd_hist'] = hist
         df['macd_cross'] = (df['macd'] > df['macd_signal']).astype(int)
-        
-        # 動量指標
         for window in [5, 10, 20]:
             df[f'momentum_{window}'] = df['close'] / df['close'].shift(window) - 1
             df[f'momentum_accel_{window}'] = df[f'momentum_{window}'].diff()
-        
-        # ADX (趨勢強度)
         df['adx'] = talib.ADX(df['high'], df['low'], df['close'], timeperiod=14)
-        
         return df
     
-    def get_feature_names(self, df: pd.DataFrame) -> list:
-        """獲取特徵名稱 - 嚴格排除未來數據"""
-        # 排除原始列、時間列、標籤相關列
-        exclude = [
-            # 原始數據
-            'open', 'high', 'low', 'close', 'volume', 
-            'open_time', 'close_time',
-            # 中間計算列
-            'bb_upper', 'bb_lower', 'macd_signal',
-            # 標籤相關 (關鍵!)
-            'future_high', 'future_low', 'future_close',
-            'long_return', 'short_return', 
-            'long_drawdown', 'short_drawdown',
-            'label_long', 'label_short', 'label', 'label_binary', 'signal_direction'
-        ]
+    def _add_pattern_features(self, df):
+        body = abs(df['close'] - df['open'])
+        upper_shadow = df['high'] - df[['open', 'close']].max(axis=1)
+        lower_shadow = df[['open', 'close']].min(axis=1) - df['low']
+        total_range = df['high'] - df['low']
+        
+        df['is_doji'] = ((body / (total_range + 1e-10)) < 0.1).astype(int)
+        df['is_hammer'] = ((lower_shadow > body * 2) & (upper_shadow < body * 0.3) & (df['close'] > df['open'])).astype(int)
+        df['is_inv_hammer'] = ((upper_shadow > body * 2) & (lower_shadow < body * 0.3) & (df['close'] < df['open'])).astype(int)
+        
+        prev_body = abs(df['close'].shift(1) - df['open'].shift(1))
+        df['is_bullish_engulf'] = ((df['close'] > df['open']) & (df['close'].shift(1) < df['open'].shift(1)) & (body > prev_body * 1.2)).astype(int)
+        df['is_bearish_engulf'] = ((df['close'] < df['open']) & (df['close'].shift(1) > df['open'].shift(1)) & (body > prev_body * 1.2)).astype(int)
+        
+        df['consecutive_up'] = (df['close'] > df['close'].shift(1)).astype(int).rolling(3).sum()
+        df['consecutive_down'] = (df['close'] < df['close'].shift(1)).astype(int).rolling(3).sum()
+        return df
+    
+    def _add_support_resistance(self, df):
+        for window in [10, 20, 40]:
+            support = df['low'].rolling(window).min()
+            resistance = df['high'].rolling(window).max()
+            df[f'dist_support_{window}'] = (df['close'] - support) / df['close']
+            df[f'dist_resistance_{window}'] = (resistance - df['close']) / df['close']
+            df[f'sr_position_{window}'] = (df['close'] - support) / (resistance - support + 1e-10)
+        return df
+    
+    def _add_volume_surge(self, df):
+        vol_ma_20 = df['volume'].rolling(20).mean()
+        vol_std_20 = df['volume'].rolling(20).std()
+        df['volume_surge'] = (df['volume'] > vol_ma_20 + 2 * vol_std_20).astype(int)
+        df['volume_extreme_ratio'] = df['volume'] / (vol_ma_20 + 1e-10)
+        
+        vol_sma_5 = df['volume'].rolling(5).mean()
+        vol_sma_20 = df['volume'].rolling(20).mean()
+        df['volume_trend_strength'] = (vol_sma_5 - vol_sma_20) / (vol_sma_20 + 1e-10)
+        
+        price_change = df['close'].pct_change()
+        volume_change = df['volume'].pct_change()
+        df['price_volume_sync'] = ((price_change > 0) & (volume_change > 0)).astype(int)
+        return df
+    
+    def get_feature_names(self, df):
+        exclude = ['open', 'high', 'low', 'close', 'volume', 'open_time', 'close_time',
+                   'bb_upper', 'bb_lower', 'macd_signal',
+                   'future_high', 'future_low', 'future_close',
+                   'long_return', 'short_return', 'long_drawdown', 'short_drawdown',
+                   'label_long', 'label_short', 'label', 'label_binary', 'signal_direction']
         
         feature_names = []
         for col in df.columns:
-            if col in exclude:
+            if col in exclude or pd.api.types.is_datetime64_any_dtype(df[col]) or df[col].dtype == 'object':
                 continue
-            # 排除datetime類型
-            if pd.api.types.is_datetime64_any_dtype(df[col]):
-                continue
-            # 排除object類型
-            if df[col].dtype == 'object':
-                continue
-            # 排除任何包含'future'的列 (雙重保護)
             if 'future' in col.lower() or 'label' in col.lower():
                 continue
             feature_names.append(col)
         
-        # 只保留有效特徵(非null)
-        valid_features = []
-        for col in feature_names:
-            if df[col].notna().sum() > len(df) * 0.5:
-                valid_features.append(col)
-        
-        print(f"[V5] Total features: {len(valid_features)}")
+        valid_features = [col for col in feature_names if df[col].notna().sum() > len(df) * 0.5]
+        print(f"[V5] Features: {len(valid_features)}")
         return valid_features
