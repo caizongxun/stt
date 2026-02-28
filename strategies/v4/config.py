@@ -2,7 +2,7 @@
 V4 Configuration - Adaptive Dual Mode
 V4配置 - 自適應雙模式
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass
 class V4Config:
@@ -71,6 +71,13 @@ class V4Config:
     # 費用
     fee_rate: float = 0.0006
     slippage: float = 0.0005
+    
+    # 信號模式 (新增)
+    signal_mode: str = 'pure'  # pure/hybrid/ranging/trending
+    use_regime_filter: bool = False  # 是否用狀態過濾
+    use_rsi_filter: bool = False  # 是否用RSI過濾
+    use_volume_filter: bool = False  # 是否用成交量過濾
+    use_support_resistance_filter: bool = False  # 是否用支撑/壓力過濾
     
     def to_dict(self) -> dict:
         return self.__dict__.copy()
