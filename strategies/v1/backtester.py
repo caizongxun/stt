@@ -1,6 +1,6 @@
 """
-V1 Backtester
-V1回測模組
+V1 Backtester - Synced
+V1回測模組 - 同步版
 """
 import pandas as pd
 import numpy as np
@@ -19,7 +19,6 @@ class Backtester:
     def run(self, model, df: pd.DataFrame, feature_names: list) -> dict:
         df = self._prepare_data(df, feature_names)
         
-        # FIX: 使用DataFrame
         df_features = df[feature_names]
         df['signal'] = model.predict(df_features)
         df['signal_proba'] = model.predict_proba(df_features).max(axis=1)
@@ -52,6 +51,8 @@ class Backtester:
     
     def _prepare_data(self, df: pd.DataFrame, feature_names: list) -> pd.DataFrame:
         df = df.copy()
+        
+        # 與trainer一致的特徵工程
         df['returns'] = df['close'].pct_change()
         df['log_returns'] = np.log(df['close'] / df['close'].shift(1))
         
@@ -59,6 +60,14 @@ class Backtester:
             df[f'sma_{period}'] = df['close'].rolling(period).mean()
             df[f'std_{period}'] = df['close'].rolling(period).std()
             df[f'momentum_{period}'] = df['close'].pct_change(period)
+            df[f'price_position_{period}'] = (df['close'] - df['close'].rolling(period).min()) / \
+                                              (df['close'].rolling(period).max() - df['close'].rolling(period).min())
+        
+        if self.config.use_volume_features:
+            df['volume_change'] = df['volume'].pct_change()
+            for period in [5, 10, 20]:
+                df[f'volume_sma_{period}'] = df['volume'].rolling(period).mean()
+                df[f'volume_ratio_{period}'] = df['volume'] / df[f'volume_sma_{period}']
         
         df = df.dropna()
         
@@ -150,7 +159,8 @@ class Backtester:
         if not self.trades:
             return {"total_return": 0.0, "total_return_pct": 0.0, "total_trades": 0, "win_rate": 0.0,
                     "profit_factor": 0.0, "sharpe_ratio": 0.0, "max_drawdown": 0.0,
-                    "avg_win": 0.0, "avg_loss": 0.0, "max_win": 0.0, "max_loss": 0.0}
+                    "avg_win": 0.0, "avg_loss": 0.0, "max_win": 0.0, "max_loss": 0.0,
+                    "winning_trades": 0, "losing_trades": 0, "final_capital": self.config.capital}
         
         trades_df = pd.DataFrame(self.trades)
         final_capital = trades_df['capital_after'].iloc[-1]
