@@ -26,7 +26,13 @@ class LabelGenerator:
         df = self._identify_valid_reversals(df)
         
         # 4. 生成標籤
-        df['label'] = 0  # 0=無效反轉, 1=有效反轉
+        # 重要: 先初始化為-1(不是BB觸碰)
+        df['label'] = -1
+        
+        # 所有BB觸碰都設為0(無效反轉)
+        df.loc[df['touch_upper'] | df['touch_lower'], 'label'] = 0
+        
+        # 有效反轉設為1
         df.loc[df['valid_reversal'], 'label'] = 1
         
         return df
@@ -96,6 +102,8 @@ class LabelGenerator:
         tolerance = self.config.breakout_tolerance
         
         df['valid_reversal'] = False
+        df['reversal_direction'] = ''
+        df['reversal_amount'] = 0.0
         
         for i in range(len(df) - lookforward):
             current_atr = df.iloc[i]['atr']
@@ -167,12 +175,16 @@ class LabelGenerator:
         reversal_long = df[df['reversal_direction'] == 'LONG'].shape[0] if 'reversal_direction' in df.columns else 0
         reversal_short = df[df['reversal_direction'] == 'SHORT'].shape[0] if 'reversal_direction' in df.columns else 0
         
+        # 無效反轉 = 總BB觸碰 - 有效反轉
+        invalid_reversals = int(touch_upper + touch_lower - valid_reversals)
+        
         return {
             'total_samples': total_samples,
             'touch_upper': int(touch_upper),
             'touch_lower': int(touch_lower),
             'total_touches': int(touch_upper + touch_lower),
             'valid_reversals': int(valid_reversals),
+            'invalid_reversals': invalid_reversals,
             'reversal_rate': float(valid_reversals / (touch_upper + touch_lower) * 100) if (touch_upper + touch_lower) > 0 else 0,
             'reversal_long': int(reversal_long),
             'reversal_short': int(reversal_short)
