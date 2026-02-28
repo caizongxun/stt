@@ -129,12 +129,19 @@ class V5FeatureEngine:
         return df
     
     def get_feature_names(self, df: pd.DataFrame) -> list:
-        """獲取特徵名稱"""
-        # 排除原始列和時間列
+        """獲取特徵名稱 - 嚴格排除未來數據"""
+        # 排除原始列、時間列、標籤相關列
         exclude = [
+            # 原始數據
             'open', 'high', 'low', 'close', 'volume', 
-            'open_time', 'close_time',  # 排除時間列
-            'bb_upper', 'bb_lower', 'macd_signal'
+            'open_time', 'close_time',
+            # 中間計算列
+            'bb_upper', 'bb_lower', 'macd_signal',
+            # 標籤相關 (關鍵!)
+            'future_high', 'future_low', 'future_close',
+            'long_return', 'short_return', 
+            'long_drawdown', 'short_drawdown',
+            'label_long', 'label_short', 'label', 'label_binary', 'signal_direction'
         ]
         
         feature_names = []
@@ -147,12 +154,15 @@ class V5FeatureEngine:
             # 排除object類型
             if df[col].dtype == 'object':
                 continue
+            # 排除任何包含'future'的列 (雙重保護)
+            if 'future' in col.lower() or 'label' in col.lower():
+                continue
             feature_names.append(col)
         
         # 只保留有效特徵(非null)
         valid_features = []
         for col in feature_names:
-            if df[col].notna().sum() > len(df) * 0.5:  # 至少50%有效
+            if df[col].notna().sum() > len(df) * 0.5:
                 valid_features.append(col)
         
         print(f"[V5] Total features: {len(valid_features)}")
