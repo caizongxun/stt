@@ -32,6 +32,12 @@ V4回測引擎
         # 1. 準備數據
         df = self._prepare_data(models, df, feature_names)
         print(f"  - Data prepared: {len(df)} bars")
+        print(f"  - Signals found: {df['trade_signal'].sum()}")
+        
+        # Debug: 檢查信號分佈
+        print(f"  - Long signals: {df['signal_long'].sum()}")
+        print(f"  - Short signals: {df['signal_short'].sum()}")
+        print(f"  - Pred > threshold: {(df['pred_proba'] >= self.config.predict_threshold).sum()}")
         
         # 2. 模擬交易
         self._simulate_trading(df)
@@ -39,7 +45,18 @@ V4回測引擎
         
         # 3. 計算結果
         if len(self.trades) == 0:
-            return {'status': 'no_trades', 'message': '無交易信號'}
+            return {
+                'status': 'no_trades', 
+                'message': '無交易信號',
+                'debug': {
+                    'total_bars': len(df),
+                    'signals_generated': int(df['trade_signal'].sum()),
+                    'long_signals': int(df['signal_long'].sum()),
+                    'short_signals': int(df['signal_short'].sum()),
+                    'high_confidence': int((df['pred_proba'] >= self.config.predict_threshold).sum()),
+                    'sample_probas': df['pred_proba'].describe().to_dict()
+                }
+            }
         
         results = self._calculate_results(df)
         
@@ -74,8 +91,26 @@ V4回測引擎
         else:
             df['pred_proba'] = models[0].predict_proba(X)[:, 1]
         
-        # 交易信號
-        df['trade_signal'] = (df['pred_proba'] >= self.config.predict_threshold).astype(int)
+        # 交易信號 - 修正邏輯
+        # 根據模型預測 + 原始信號方向
+        high_confidence = df['pred_proba'] >= self.config.predict_threshold
+        
+        # 重新生成signal_long/short
+        df['signal_long'] = 0
+        df['signal_short'] = 0
+        
+        # 盤整模式
+        ranging = df['regime'] == 'RANGING'
+        df.loc[ranging & high_confidence & (df['near_support'] == 1) & (df['rsi'] < 40), 'signal_long'] = 1
+        df.loc[ranging & high_confidence & (df['near_resistance'] == 1) & (df['rsi'] > 60), 'signal_short'] = 1
+        
+        # 趨勢模式
+        trending = df['regime'] == 'TRENDING'
+        df.loc[trending & high_confidence & (df['breakout_up'] == 1) & (df['volume_ratio'] > 1.2), 'signal_long'] = 1
+        df.loc[trending & high_confidence & (df['breakout_down'] == 1) & (df['volume_ratio'] > 1.2), 'signal_short'] = 1
+        
+        # 總信號
+        df['trade_signal'] = ((df['signal_long'] == 1) | (df['signal_short'] == 1)).astype(int)
         
         return df
     
