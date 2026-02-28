@@ -21,6 +21,15 @@ class V1Config:
     learning_rate: float = 0.05
     n_estimators: int = 100
     
+    # 類別不平衡處理
+    use_class_weight: bool = True
+    class_weights: dict = None
+    
+    # 標籤生成
+    label_threshold_long: float = 0.005
+    label_threshold_short: float = -0.005
+    label_periods: int = 3
+    
     # 特徵工程
     lookback_periods: list = None
     
@@ -33,9 +42,15 @@ class V1Config:
     def __post_init__(self):
         if self.lookback_periods is None:
             self.lookback_periods = [5, 10, 20]
+        
+        if self.class_weights is None and self.use_class_weight:
+            self.class_weights = {
+                0: 1.0,
+                1: 15.0,
+                2: 15.0
+            }
     
     def to_dict(self) -> dict:
-        """轉換為字典"""
         return {
             'symbol': self.symbol,
             'timeframe': self.timeframe,
@@ -44,6 +59,11 @@ class V1Config:
             'max_depth': self.max_depth,
             'learning_rate': self.learning_rate,
             'n_estimators': self.n_estimators,
+            'use_class_weight': self.use_class_weight,
+            'class_weights': self.class_weights,
+            'label_threshold_long': self.label_threshold_long,
+            'label_threshold_short': self.label_threshold_short,
+            'label_periods': self.label_periods,
             'lookback_periods': self.lookback_periods,
             'capital': self.capital,
             'leverage': self.leverage,
