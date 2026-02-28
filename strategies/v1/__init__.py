@@ -13,7 +13,7 @@ def render():
     """
     V1策略主界面
     """
-    st.header("🎯 V1 Strategy - LightGBM Baseline")
+    st.header("V1 Strategy - LightGBM Baseline")
     st.info("""
     **特點:**
     - 模型: LightGBM
@@ -23,7 +23,7 @@ def render():
     """)
     
     # 頁面切換
-    tab1, tab2, tab3 = st.tabs(["🚀 訓練", "📊 回測", "ℹ️ 說明"])
+    tab1, tab2, tab3 = st.tabs(["[訓練]", "[回測]", "[說明]"])
     
     with tab1:
         render_training()
@@ -36,7 +36,7 @@ def render():
 
 def render_training():
     """渲染訓練頁面"""
-    st.subheader("🚀 模型訓練")
+    st.subheader("模型訓練")
     
     col1, col2 = st.columns([1, 2])
     
@@ -58,7 +58,7 @@ def render_training():
         
         st.markdown("---")
         
-        train_button = st.button("🚀 開始訓練", type="primary", use_container_width=True)
+        train_button = st.button("開始訓練", type="primary", use_container_width=True)
     
     with col2:
         st.markdown("### 訓練過程")
@@ -68,7 +68,7 @@ def render_training():
             with st.spinner("加載數據..."):
                 loader = DataLoader()
                 df = loader.load_klines(symbol, timeframe)
-                st.success(f"✅ 加載 {len(df)} 筆數據")
+                st.success(f"[OK] 加載 {len(df)} 筆數據")
             
             # 訓練
             config = V1Config(
@@ -85,7 +85,7 @@ def render_training():
                 with st.spinner("訓練中..."):
                     results = trainer.train(df)
                 
-                st.success("✅ 訓練完成!")
+                st.success("[OK] 訓練完成!")
                 st.json(results)
                 st.balloons()
             
@@ -104,7 +104,7 @@ def render_training():
 
 def render_backtesting():
     """渲柔回測頁面"""
-    st.subheader("📊 策略回測")
+    st.subheader("策略回測")
     
     col1, col2 = st.columns([1, 2])
     
@@ -121,19 +121,19 @@ def render_backtesting():
         
         st.markdown("---")
         
-        backtest_button = st.button("📊 開始回測", type="primary", use_container_width=True)
+        backtest_button = st.button("開始回測", type="primary", use_container_width=True)
     
     with col2:
         st.markdown("### 回測結果")
         
         if backtest_button:
-            st.info("🚧 回測功能開發中...")
+            st.info("[開發中] 回測功能開發中...")
         else:
             st.info("請先訓練模型,然後進行回測")
 
 def render_info():
     """渲柔說明頁面"""
-    st.subheader("ℹ️ V1策略說明")
+    st.subheader("V1策略說明")
     
     st.markdown("""
     ## 策略概述
@@ -147,14 +147,14 @@ def render_info():
     - **訓練時間**: 2-5分鐘
     
     ### 優點
-    - ✅ 快速訓練
-    - ✅ 不需GPU
-    - ✅ 穩定可靠
-    - ✅ 易於調參
+    - [+] 快速訓練
+    - [+] 不需GPU
+    - [+] 穩定可靠
+    - [+] 易於調參
     
     ### 缺點
-    - ❌ 不具備時序學習
-    - ❌ 性能中等
+    - [-] 不具備時序學習
+    - [-] 性能中等
     
     ### 預期效果
     - **月報酬**: 30-50%
