@@ -32,15 +32,29 @@ class V5LabelGenerator:
         return df
     
     def _calculate_future_returns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """計算未來報酬"""
+        """
+        計算未來報酬
+        注意: 使用shift(-N)才是真正的未來數據
+        """
         forward = self.config.forward_bars
         
-        # 未來最高/最低價
-        df['future_high'] = df['high'].shift(-1).rolling(forward).max()
-        df['future_low'] = df['low'].shift(-1).rolling(forward).min()
+        # 未來N根K棒的最高/最低
+        # 重要: 從i+1開始,到i+forward+1,不包含i本身!
+        future_highs = []
+        future_lows = []
         
-        # 未來收盤價
-        df['future_close'] = df['close'].shift(-forward)
+        for i in range(len(df)):
+            if i + forward + 1 <= len(df):
+                # 未來forward根K棒 (不包含當前)
+                future_data = df.iloc[i+1:i+forward+1]
+                future_highs.append(future_data['high'].max())
+                future_lows.append(future_data['low'].min())
+            else:
+                future_highs.append(np.nan)
+                future_lows.append(np.nan)
+        
+        df['future_high'] = future_highs
+        df['future_low'] = future_lows
         
         # 做多潛在報酬
         df['long_return'] = (df['future_high'] - df['close']) / df['close']
@@ -48,11 +62,28 @@ class V5LabelGenerator:
         # 做空潛在報酬
         df['short_return'] = (df['close'] - df['future_low']) / df['close']
         
-        # 做多最大回撤
-        df['long_drawdown'] = (df['close'] - df['future_low']) / df['close']
+        # 做多最大回撤 (在達到最高前的最大回撤)
+        long_drawdowns = []
+        short_drawdowns = []
         
-        # 做空最大回撤
-        df['short_drawdown'] = (df['future_high'] - df['close']) / df['close']
+        for i in range(len(df)):
+            if i + forward + 1 <= len(df):
+                future_data = df.iloc[i+1:i+forward+1]
+                entry_price = df.iloc[i]['close']
+                
+                # 做多回撤: 從開仓到最低點
+                long_dd = (entry_price - future_data['low'].min()) / entry_price
+                long_drawdowns.append(long_dd)
+                
+                # 做空回撤: 從開仓到最高點
+                short_dd = (future_data['high'].max() - entry_price) / entry_price
+                short_drawdowns.append(short_dd)
+            else:
+                long_drawdowns.append(np.nan)
+                short_drawdowns.append(np.nan)
+        
+        df['long_drawdown'] = long_drawdowns
+        df['short_drawdown'] = short_drawdowns
         
         return df
     
