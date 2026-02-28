@@ -91,8 +91,12 @@ class Trainer:
         """
         訓練LightGBM模型
         """
+        # 修正class_weight的key類型
         if self.config.use_class_weight:
-            class_weight = self.config.class_weights
+            # 確保y_train中實際有哪些類別
+            unique_classes = np.unique(y_train)
+            # 將config中的weight轉換為字典,key使用numpy類型
+            class_weight = {int(k): v for k, v in self.config.class_weights.items() if k in unique_classes}
         else:
             class_weight = None
         
