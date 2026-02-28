@@ -130,11 +130,24 @@ class V5FeatureEngine:
     
     def get_feature_names(self, df: pd.DataFrame) -> list:
         """獲取特徵名稱"""
-        # 排除原始列
-        exclude = ['open', 'high', 'low', 'close', 'volume', 'open_time', 
-                   'bb_upper', 'bb_lower', 'macd_signal']
+        # 排除原始列和時間列
+        exclude = [
+            'open', 'high', 'low', 'close', 'volume', 
+            'open_time', 'close_time',  # 排除時間列
+            'bb_upper', 'bb_lower', 'macd_signal'
+        ]
         
-        feature_names = [col for col in df.columns if col not in exclude]
+        feature_names = []
+        for col in df.columns:
+            if col in exclude:
+                continue
+            # 排除datetime類型
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                continue
+            # 排除object類型
+            if df[col].dtype == 'object':
+                continue
+            feature_names.append(col)
         
         # 只保留有效特徵(非null)
         valid_features = []
