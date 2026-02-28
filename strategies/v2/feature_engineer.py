@@ -10,7 +10,7 @@ class FeatureEngineer:
     def __init__(self, config):
         self.config = config
     
-    def engineer(self, df: pd.DataFrame) -> tuple:
+    def engineer(self, df: pd.DataFrame, is_backtest: bool = False) -> tuple:
         """
         生成所有特徵
         返回: (df_with_features, feature_names)
@@ -32,10 +32,15 @@ class FeatureEngineer:
             df, regime_features = self._add_market_regime(df)
             feature_names.extend(regime_features)
         
-        # 4. 歷史成功率
-        if self.config.use_historical_success:
+        # 4. 歷史成功率 (只在訓練時使用)
+        if self.config.use_historical_success and not is_backtest:
             df, hist_features = self._add_historical_success(df)
             feature_names.extend(hist_features)
+        elif is_backtest and self.config.use_historical_success:
+            # 回測時使用預設值
+            df['success_rate'] = 0.35  # 使用訓練時的平均成功率
+            df['hour_success_rate'] = 0.35
+            feature_names.extend(['success_rate', 'hour_success_rate'])
         
         return df, feature_names
     
@@ -131,7 +136,7 @@ class FeatureEngineer:
     
     def _add_historical_success(self, df: pd.DataFrame) -> tuple:
         """
-        歷史成功率特徵
+        歷史成功率特徵 - 只在訓練時使用
         """
         features = []
         
