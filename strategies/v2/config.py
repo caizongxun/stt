@@ -24,30 +24,30 @@ class V2Config:
     atr_sl_multiplier: float = 2.0
     atr_tp_multiplier: float = 3.0
     
-    # 標籤生成參數
-    reversal_lookforward: int = 10
-    min_reversal_atr: float = 1.5
+    # 標籤生成參數 - 更嚴格
+    reversal_lookforward: int = 20  # 10->20 (更長期觀察)
+    min_reversal_atr: float = 2.0   # 1.5->2.0 (更明顯反轉)
     breakout_tolerance: float = 0.01
     
-    # 模型參數 - 優化
+    # 模型參數
     model_type: str = "lightgbm"
-    num_leaves: int = 15  # 降低從20->15 (減少過擬合)
-    max_depth: int = 3  # 降低從4->3
-    learning_rate: float = 0.01  # 降低從0.03->0.01 (更保守)
-    n_estimators: int = 200  # 提高從150->200
-    min_child_samples: int = 100  # 提高從50->100 (更严格)
+    num_leaves: int = 15
+    max_depth: int = 3
+    learning_rate: float = 0.01
+    n_estimators: int = 200
+    min_child_samples: int = 100
     
-    # 類別權重 - 重新調整
+    # 類別權重
     use_class_weight: bool = True
     class_weights: dict = None
     
-    # 預測阈值 - 提高精準度
-    predict_threshold: float = 0.6  # 預測機率>0.6才算有效反轉
+    # 預測閉值 - 更嚴格
+    predict_threshold: float = 0.75  # 0.6->0.75 (只交易高置信度)
     
-    # 特徵工程
+    # 特徵工程 - 禁用歷史成功率
     use_technical_indicators: bool = True
     use_market_regime: bool = True
-    use_historical_success: bool = True
+    use_historical_success: bool = False  # True->False (移除問題特徵)
     
     # 回測參數
     capital: float = 10000
@@ -69,10 +69,9 @@ class V2Config:
     
     def __post_init__(self):
         if self.class_weights is None and self.use_class_weight:
-            # 降低權重從5.0->2.0
             self.class_weights = {
                 0: 1.0,
-                1: 2.0  # 有效反轉權重降低
+                1: 2.0
             }
     
     def to_dict(self) -> dict:
