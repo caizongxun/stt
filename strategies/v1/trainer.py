@@ -14,6 +14,8 @@ from sklearn.metrics import (
     roc_auc_score, confusion_matrix
 )
 import json
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning)
 
 class Trainer:
     def __init__(self, config):
@@ -30,6 +32,10 @@ class Trainer:
             X, y, train_size=self.config.train_size, shuffle=False
         )
         
+        # FIX: 使用DataFrame保留特徵名
+        X_train_df = pd.DataFrame(X_train, columns=self.feature_names)
+        X_val_df = pd.DataFrame(X_val, columns=self.feature_names)
+        
         # FIX: 使用類別權重
         self.model = lgb.LGBMClassifier(
             num_leaves=self.config.num_leaves,
@@ -43,10 +49,10 @@ class Trainer:
             random_state=42
         )
         
-        self.model.fit(X_train, y_train, eval_set=[(X_val, y_val)], eval_metric='multi_logloss')
+        self.model.fit(X_train_df, y_train, eval_set=[(X_val_df, y_val)], eval_metric='multi_logloss')
         
-        train_metrics = self._evaluate(X_train, y_train, "train")
-        val_metrics = self._evaluate(X_val, y_val, "validation")
+        train_metrics = self._evaluate(X_train_df, y_train, "train")
+        val_metrics = self._evaluate(X_val_df, y_val, "validation")
         feature_importance = self._get_feature_importance()
         train_distribution = self._get_label_distribution(y_train)
         val_distribution = self._get_label_distribution(y_val)
