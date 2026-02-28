@@ -56,7 +56,30 @@ class DataLoader:
                 cache_dir=str(_self.cache_dir)
             )
             df = pd.read_parquet(local_path)
+            
+            # FIX: 轉換所有數值欄位為數值型別
+            numeric_columns = [
+                'open', 'high', 'low', 'close', 'volume',
+                'quote_asset_volume', 'number_of_trades',
+                'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'
+            ]
+            
+            for col in numeric_columns:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # 處理ignore欄位
+            if 'ignore' in df.columns:
+                df['ignore'] = pd.to_numeric(df['ignore'], errors='coerce')
+            
+            # 確保open_time和close_time是時間型別
+            if 'open_time' in df.columns:
+                df['open_time'] = pd.to_datetime(df['open_time'])
+            if 'close_time' in df.columns:
+                df['close_time'] = pd.to_datetime(df['close_time'])
+            
             return df
+            
         except Exception as e:
             st.error(f"數據加載失敗: {e}")
             return pd.DataFrame()
