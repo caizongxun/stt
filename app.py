@@ -60,10 +60,16 @@ def main():
         # 顯示版本信息
         version_info = vm.get_version_info(selected_version)
         
+        # 使用變量避免f-string中的反斜線
+        check_mark = "✅"
+        cross_mark = "❌"
+        
         with st.expander("📊 版本信息"):
             st.write(f"**名稱**: {version_info['name']}")
-            st.write(f"**訓練模組**: {'\u2705' if version_info['has_trainer'] else '\u274c'}")
-            st.write(f"**回測模組**: {'\u2705' if version_info['has_backtester'] else '\u274c'}")
+            trainer_status = check_mark if version_info['has_trainer'] else cross_mark
+            backtester_status = check_mark if version_info['has_backtester'] else cross_mark
+            st.write(f"**訓練模組**: {trainer_status}")
+            st.write(f"**回測模組**: {backtester_status}")
         
         st.markdown("---")
         
