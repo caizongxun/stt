@@ -21,25 +21,28 @@ class V2Config:
     
     # ATR參數
     atr_window: int = 14
-    atr_sl_multiplier: float = 2.0  # 止損 = 2 * ATR
-    atr_tp_multiplier: float = 3.0  # 止盈 = 3 * ATR
+    atr_sl_multiplier: float = 2.0
+    atr_tp_multiplier: float = 3.0
     
     # 標籤生成參數
-    reversal_lookforward: int = 10  # 未來10根K棒內檢查反轉
-    min_reversal_atr: float = 1.5   # 至少反轉1.5倍ATR才算有效
-    breakout_tolerance: float = 0.01  # 允許突破1%
+    reversal_lookforward: int = 10
+    min_reversal_atr: float = 1.5
+    breakout_tolerance: float = 0.01
     
-    # 模型參數
-    model_type: str = "lightgbm"  # lightgbm or lstm
-    num_leaves: int = 20
-    max_depth: int = 4
-    learning_rate: float = 0.03
-    n_estimators: int = 150
-    min_child_samples: int = 50
+    # 模型參數 - 優化
+    model_type: str = "lightgbm"
+    num_leaves: int = 15  # 降低從20->15 (減少過擬合)
+    max_depth: int = 3  # 降低從4->3
+    learning_rate: float = 0.01  # 降低從0.03->0.01 (更保守)
+    n_estimators: int = 200  # 提高從150->200
+    min_child_samples: int = 100  # 提高從50->100 (更严格)
     
-    # 類別權重
+    # 類別權重 - 重新調整
     use_class_weight: bool = True
     class_weights: dict = None
+    
+    # 預測阈值 - 提高精準度
+    predict_threshold: float = 0.6  # 預測機率>0.6才算有效反轉
     
     # 特徵工程
     use_technical_indicators: bool = True
@@ -53,7 +56,7 @@ class V2Config:
     backtest_days: int = 90
     
     # 進場策略
-    entry_strategy: str = "hybrid"  # martingale, batch, hybrid
+    entry_strategy: str = "hybrid"
     initial_position_pct: float = 0.15
     add_on_position_pct: float = 0.10
     max_add_ons: int = 2
@@ -66,10 +69,10 @@ class V2Config:
     
     def __post_init__(self):
         if self.class_weights is None and self.use_class_weight:
-            # 二元分類: 0=無效反轉, 1=有效反轉
+            # 降低權重從5.0->2.0
             self.class_weights = {
                 0: 1.0,
-                1: 5.0  # 提高有效反轉的權重
+                1: 2.0  # 有效反轉權重降低
             }
     
     def to_dict(self) -> dict:
@@ -93,6 +96,7 @@ class V2Config:
             'min_child_samples': self.min_child_samples,
             'use_class_weight': self.use_class_weight,
             'class_weights': self.class_weights,
+            'predict_threshold': self.predict_threshold,
             'use_technical_indicators': self.use_technical_indicators,
             'use_market_regime': self.use_market_regime,
             'use_historical_success': self.use_historical_success,
