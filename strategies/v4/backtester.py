@@ -32,12 +32,7 @@ V4回測引擎
         # 1. 準備數據
         df = self._prepare_data(models, df, feature_names)
         print(f"  - Data prepared: {len(df)} bars")
-        print(f"  - Signals found: {df['trade_signal'].sum()}")
-        
-        # Debug: 檢查信號分佈
-        print(f"  - Long signals: {df['signal_long'].sum()}")
-        print(f"  - Short signals: {df['signal_short'].sum()}")
-        print(f"  - Pred > threshold: {(df['pred_proba'] >= self.config.predict_threshold).sum()}")
+        print(f"  - High confidence signals: {df['trade_signal'].sum()}")
         
         # 2. 模擬交易
         self._simulate_trading(df)
@@ -50,10 +45,7 @@ V4回測引擎
                 'message': '無交易信號',
                 'debug': {
                     'total_bars': len(df),
-                    'signals_generated': int(df['trade_signal'].sum()),
-                    'long_signals': int(df['signal_long'].sum()),
-                    'short_signals': int(df['signal_short'].sum()),
-                    'high_confidence': int((df['pred_proba'] >= self.config.predict_threshold).sum()),
+                    'high_confidence': int(df['trade_signal'].sum()),
                     'sample_probas': df['pred_proba'].describe().to_dict()
                 }
             }
@@ -74,7 +66,7 @@ V4回測引擎
         structure_detector = StructureDetector(self.config)
         df = structure_detector.detect(df)
         
-        # 信號生成
+        # 信號生成 (僅用於特徵)
         signal_gen = DualModeSignalGenerator(self.config)
         df = signal_gen.generate(df)
         
@@ -91,28 +83,79 @@ V4回測引擎
         else:
             df['pred_proba'] = models[0].predict_proba(X)[:, 1]
         
-        # 交易信號 - 修正邏輯
-        # 根據模型預測 + 原始信號方向
-        high_confidence = df['pred_proba'] >= self.config.predict_threshold
+        # 交易信號 - 完全依賴模型預測
+        df['trade_signal'] = (df['pred_proba'] >= self.config.predict_threshold).astype(int)
         
-        # 重新生成signal_long/short
-        df['signal_long'] = 0
-        df['signal_short'] = 0
-        
-        # 盤整模式
-        ranging = df['regime'] == 'RANGING'
-        df.loc[ranging & high_confidence & (df['near_support'] == 1) & (df['rsi'] < 40), 'signal_long'] = 1
-        df.loc[ranging & high_confidence & (df['near_resistance'] == 1) & (df['rsi'] > 60), 'signal_short'] = 1
-        
-        # 趨勢模式
-        trending = df['regime'] == 'TRENDING'
-        df.loc[trending & high_confidence & (df['breakout_up'] == 1) & (df['volume_ratio'] > 1.2), 'signal_long'] = 1
-        df.loc[trending & high_confidence & (df['breakout_down'] == 1) & (df['volume_ratio'] > 1.2), 'signal_short'] = 1
-        
-        # 總信號
-        df['trade_signal'] = ((df['signal_long'] == 1) | (df['signal_short'] == 1)).astype(int)
+        # 方向判斷 - 根據配置選擇策略
+        df['signal_direction'] = self._determine_direction(df)
         
         return df
+    
+    def _determine_direction(self, df: pd.DataFrame) -> pd.Series:
+        """
+        判斷交易方向
+        根據配置選擇不同策略
+        """
+        direction = pd.Series(0, index=df.index)
+        
+        mode = getattr(self.config, 'signal_mode', 'hybrid')  # hybrid/ranging/trending/pure
+        
+        if mode == 'pure':
+            # 純模型預測,用價格動量判斷方向
+            direction = np.where(df['close'] > df['close'].shift(1), 1, -1)
+        
+        elif mode == 'ranging':
+            # 只用盤整信號
+            ranging = df['regime'] == 'RANGING'
+            direction = np.where(
+                ranging & (df['near_support'] == 1),
+                1,  # 做多
+                np.where(
+                    ranging & (df['near_resistance'] == 1),
+                    -1,  # 做空
+                    0
+                )
+            )
+        
+        elif mode == 'trending':
+            # 只用趨勢信號
+            trending = df['regime'] == 'TRENDING'
+            direction = np.where(
+                trending & (df['breakout_up'] == 1),
+                1,
+                np.where(
+                    trending & (df['breakout_down'] == 1),
+                    -1,
+                    0
+                )
+            )
+        
+        else:  # hybrid
+            # 混合模式 - 優先考慮原始信號,但不強制
+            ranging = df['regime'] == 'RANGING'
+            trending = df['regime'] == 'TRENDING'
+            
+            # 盤整信號
+            ranging_long = ranging & (df['near_support'] == 1)
+            ranging_short = ranging & (df['near_resistance'] == 1)
+            
+            # 趨勢信號
+            trending_long = trending & (df['breakout_up'] == 1)
+            trending_short = trending & (df['breakout_down'] == 1)
+            
+            # 組合判斷
+            direction = np.where(
+                ranging_long | trending_long,
+                1,
+                np.where(
+                    ranging_short | trending_short,
+                    -1,
+                    # 沒有明確信號時,用價格趋勢
+                    np.where(df['close'] > df['close'].shift(1), 1, -1)
+                )
+            )
+        
+        return pd.Series(direction, index=df.index)
     
     def _simulate_trading(self, df: pd.DataFrame):
         """模擬交易執行"""
@@ -134,12 +177,9 @@ V4回測引擎
                self.daily_trades < self.config.max_trades_per_day and \
                i - self.last_trade_bar >= 4:  # 至少4根K棒間隔
                 
-                if row['trade_signal'] == 1:
-                    # 根據信號方向開仓
-                    if row['signal_long'] == 1:
-                        self._open_position(row, i, 'LONG')
-                    elif row['signal_short'] == 1:
-                        self._open_position(row, i, 'SHORT')
+                if row['trade_signal'] == 1 and row['signal_direction'] != 0:
+                    direction = 'LONG' if row['signal_direction'] == 1 else 'SHORT'
+                    self._open_position(row, i, direction)
             
             # 記錄權益
             self.equity_curve.append({
