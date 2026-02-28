@@ -168,6 +168,20 @@ def render_backtesting():
         st.markdown("---")
         backtest_days = st.slider("回測天數", 7, 90, 30, 7)
         
+        st.markdown("**交易參數**")
+        predict_threshold = st.slider("預測閉值", 0.3, 0.9, 0.5, 0.05, 
+                                      help="較低=更多交易, 較高=更謹慎")
+        
+        st.markdown("**資金管理**")
+        leverage = st.slider("槓桶倍數", 1, 10, 3, 1)
+        position_pct = st.slider("仓位比例", 0.1, 0.5, 0.3, 0.05)
+        use_compound = st.checkbox("複利模式", value=True)
+        
+        st.markdown("**風控參數**")
+        atr_sl = st.slider("止損(ATR倍數)", 0.5, 3.0, 1.5, 0.5)
+        atr_tp_range = st.slider("盤整止盈", 1.0, 3.0, 1.5, 0.5)
+        atr_tp_breakout = st.slider("趨勢止盈", 2.0, 5.0, 3.0, 0.5)
+        
         st.markdown("---")
         backtest_button = st.button("開始回測", type="primary", use_container_width=True)
     
@@ -195,14 +209,23 @@ def render_backtesting():
                     df = df.tail(backtest_days * 96)
                     st.success(f"[OK] {len(df)} bars")
                 
+                # 使用自定義參數
                 config = V4Config(**config_dict)
+                config.predict_threshold = predict_threshold
+                config.leverage = leverage
+                config.position_pct = position_pct
+                config.use_compound = use_compound
+                config.atr_sl_multiplier = atr_sl
+                config.atr_tp_range = atr_tp_range
+                config.atr_tp_breakout = atr_tp_breakout
+                
                 backtester = V4Backtester(config)
                 
                 with st.spinner("執行回測..."):
                     results = backtester.run(models, df, feature_names)
                 
                 if results['status'] == 'no_trades':
-                    st.warning(results['message'])
+                    st.warning("無交易信號 - 嘗試降低預測閉值")
                 else:
                     st.success("[OK] 回測完成")
                     
@@ -210,23 +233,36 @@ def render_backtesting():
                     st.markdown("### 核心結果")
                     col_a, col_b, col_c, col_d = st.columns(4)
                     with col_a:
-                        st.metric("總報酬", f"{results['capital']['total_return_pct']:.1f}%")
+                        ret = results['capital']['total_return_pct']
+                        st.metric("總報酬", f"{ret:.1f}%", 
+                                 delta="優" if ret > 20 else "中" if ret > 10 else "弱")
                     with col_b:
-                        st.metric("勝率", f"{results['trades']['win_rate_pct']:.1f}%")
+                        wr = results['trades']['win_rate_pct']
+                        st.metric("勝率", f"{wr:.1f}%",
+                                 delta="優" if wr > 55 else "中" if wr > 50 else "弱")
                     with col_c:
-                        st.metric("利潤因子", f"{results['trades']['profit_factor']:.2f}")
+                        pf = results['trades']['profit_factor']
+                        st.metric("利潤因子", f"{pf:.2f}",
+                                 delta="優" if pf > 2 else "中" if pf > 1.5 else "弱")
                     with col_d:
-                        st.metric("最大回撤", f"{results['capital']['max_drawdown_pct']:.1f}%")
+                        dd = results['capital']['max_drawdown_pct']
+                        st.metric("最大回撤", f"{dd:.1f}%",
+                                 delta="優" if dd < 15 else "中" if dd < 25 else "危險",
+                                 delta_color="inverse")
                     
                     # 交易統計
                     st.markdown("### 交易統計")
-                    col_e, col_f, col_g = st.columns(3)
+                    col_e, col_f, col_g, col_h = st.columns(4)
                     with col_e:
                         st.metric("總交易", results['trades']['total'])
                     with col_f:
-                        st.metric("獲利交易", results['trades']['winning'])
+                        st.metric("獲利", results['trades']['winning'])
                     with col_g:
-                        st.metric("虧損交易", results['trades']['losing'])
+                        st.metric("虧損", results['trades']['losing'])
+                    with col_h:
+                        avg_w = results['trades']['avg_win']
+                        avg_l = abs(results['trades']['avg_loss'])
+                        st.metric("平均盈虧比", f"{avg_w/avg_l if avg_l > 0 else 0:.2f}")
                     
                     # 分狀態表現
                     st.markdown("### 分狀態表現")
@@ -247,6 +283,21 @@ def render_backtesting():
                         - 盈虧: {regime['trending_pnl']:.2f}
                         """)
                     
+                    # 時間統計
+                    period = results['period']
+                    days = period['days']
+                    trades_per_day = results['trades']['total'] / days if days > 0 else 0
+                    daily_return = results['capital']['total_return_pct'] / days if days > 0 else 0
+                    
+                    st.markdown("### 時間分析")
+                    col_j, col_k, col_l = st.columns(3)
+                    with col_j:
+                        st.metric("回測天數", f"{days}")
+                    with col_k:
+                        st.metric("每日交易", f"{trades_per_day:.1f}")
+                    with col_l:
+                        st.metric("日均報酬", f"{daily_return:.2f}%")
+                    
                     # 出場原因
                     with st.expander("出場原因分佈"):
                         st.json(results['exit_reasons'])
@@ -264,7 +315,23 @@ def render_backtesting():
                 st.error(f"回測失敗: {e}")
                 st.exception(e)
         else:
-            st.info("選擇模型並點擊回測")
+            st.info("""
+            **回測說明:**
+            
+            **預測閉值:**
+            - 0.3-0.4: 激進 (多交易,低精確)
+            - 0.5: 平衡 (推薦)
+            - 0.6-0.7: 保守 (少交易,高精確)
+            
+            **槓桶建議:**
+            - 1-2x: 低風險
+            - 3-5x: 中風險 (推薦)
+            - 5x+: 高風險
+            
+            **止盈設置:**
+            - 盤整: 1-2 ATR (短線)
+            - 趨勢: 2-4 ATR (長線)
+            """)
 
 def render_strategy_info():
     st.subheader("策略說明")
