@@ -117,27 +117,29 @@ class LabelGenerator:
     
     def _create_labels(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        創建訓練標籤
-        label=1: 值得交易 (預期盈虧比>2)
+        創建訓練標籤 - 更嚴格的標準
+        label=1: 值得交易
         label=0: 不值得交易
         """
-        # 做多標籤
+        # 做多標籤 - 更嚴格
         df['label_long'] = (
-            (df['long_potential'] > 1.5) &  # 至少1.5 ATR收益
-            (df['long_potential'] / df['long_risk'].clip(lower=0.1) > 1.5)  # 盈虧比>1.5
+            (df['long_potential'] >= 2.0) &  # 至少2 ATR收益
+            (df['long_potential'] / df['long_risk'].clip(lower=0.1) >= 2.5) &  # 盈虧比>2.5
+            (df['long_risk'] <= 2.0)  # 風險不超過2 ATR
         ).astype(int)
         
-        # 做空標籤
+        # 做空標籤 - 更嚴格
         df['label_short'] = (
-            (df['short_potential'] > 1.5) &
-            (df['short_potential'] / df['short_risk'].clip(lower=0.1) > 1.5)
+            (df['short_potential'] >= 2.0) &
+            (df['short_potential'] / df['short_risk'].clip(lower=0.1) >= 2.5) &
+            (df['short_risk'] <= 2.0)
         ).astype(int)
         
-        # 合併標籤 (只要有一個方向機會就是1)
+        # 合併標籤
         df['label'] = ((df['label_long'] == 1) | (df['label_short'] == 1)).astype(int)
         
         # 方向標籤
-        df['label_direction'] = 0  # 0=無, 1=long, -1=short
+        df['label_direction'] = 0
         df.loc[df['label_long'] == 1, 'label_direction'] = 1
         df.loc[df['label_short'] == 1, 'label_direction'] = -1
         
