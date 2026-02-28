@@ -41,10 +41,10 @@ class Backtester:
         df = label_gen._calculate_bb_atr(df)
         df = label_gen._detect_bb_touch(df)
         
-        # 生成特徵
+        # 生成特徵 - 傳入is_backtest=True
         from .feature_engineer import FeatureEngineer
         feat_eng = FeatureEngineer(self.config)
-        df, _ = feat_eng.engineer(df)
+        df, _ = feat_eng.engineer(df, is_backtest=True)
         
         # 預測
         X = df[feature_names]
