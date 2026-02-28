@@ -15,23 +15,25 @@ class V1Config:
     timeframe: str = "15m"
     train_size: float = 0.7
     
-    # LightGBM參數
-    num_leaves: int = 31
-    max_depth: int = 6
+    # LightGBM參數 - 減少過擬合
+    num_leaves: int = 20  # 31 -> 20
+    max_depth: int = 4    # 6 -> 4
     learning_rate: float = 0.05
-    n_estimators: int = 100
+    n_estimators: int = 150  # 100 -> 150
+    min_child_samples: int = 50  # 新增正則化
     
-    # 類別不平衡處理
+    # 類別不平衡處理 - 降低權重
     use_class_weight: bool = True
     class_weights: dict = None
     
-    # 標籤生成
-    label_threshold_long: float = 0.005
-    label_threshold_short: float = -0.005
+    # 標籤生成 - 提高閘值提升精確度
+    label_threshold_long: float = 0.008   # 0.005 -> 0.008
+    label_threshold_short: float = -0.008 # -0.005 -> -0.008
     label_periods: int = 3
     
-    # 特徵工程
+    # 特徵工程 - 增加更多特徵
     lookback_periods: list = None
+    use_volume_features: bool = True  # 新增成交量特徵
     
     # 回測參數
     capital: float = 10000
@@ -41,13 +43,14 @@ class V1Config:
     
     def __post_init__(self):
         if self.lookback_periods is None:
-            self.lookback_periods = [5, 10, 20]
+            self.lookback_periods = [5, 10, 20, 50]  # 增加50期
         
         if self.class_weights is None and self.use_class_weight:
+            # 優化: 降低權重避免過度預測
             self.class_weights = {
-                0: 1.0,
-                1: 15.0,
-                2: 15.0
+                0: 1.0,   # hold
+                1: 5.0,   # long (15 -> 5)
+                2: 5.0    # short (15 -> 5)
             }
     
     def to_dict(self) -> dict:
@@ -59,12 +62,14 @@ class V1Config:
             'max_depth': self.max_depth,
             'learning_rate': self.learning_rate,
             'n_estimators': self.n_estimators,
+            'min_child_samples': self.min_child_samples,
             'use_class_weight': self.use_class_weight,
             'class_weights': self.class_weights,
             'label_threshold_long': self.label_threshold_long,
             'label_threshold_short': self.label_threshold_short,
             'label_periods': self.label_periods,
             'lookback_periods': self.lookback_periods,
+            'use_volume_features': self.use_volume_features,
             'capital': self.capital,
             'leverage': self.leverage,
             'fee_rate': self.fee_rate,
