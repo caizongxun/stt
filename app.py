@@ -24,7 +24,7 @@ from core.gui_components import GUIComponents
 # 頁面配置
 st.set_page_config(
     page_title="Smart Trading Terminal",
-    page_icon="🚀",
+    page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -33,18 +33,18 @@ def main():
     """主函數"""
     
     # 標題
-    st.title("🚀 Smart Trading Terminal")
+    st.title("Smart Trading Terminal")
     st.caption("模塊化加密貨幣交易策略系統")
     
     # 側邊欄 - 版本選擇
     with st.sidebar:
-        st.header("📦 版本選擇")
+        st.header("版本選擇")
         
         vm = VersionManager()
         versions = vm.list_versions()
         
         if not versions:
-            st.error("⚠️ 沒有可用的策略版本")
+            st.error("沒有可用的策略版本")
             st.info("""
             請確保 strategies/ 資料夾中至少有一個版本
             例如: strategies/v1/
@@ -60,21 +60,17 @@ def main():
         # 顯示版本信息
         version_info = vm.get_version_info(selected_version)
         
-        # 使用變量避免f-string中的反斜線
-        check_mark = "✅"
-        cross_mark = "❌"
-        
-        with st.expander("📊 版本信息"):
+        with st.expander("版本信息"):
             st.write(f"**名稱**: {version_info['name']}")
-            trainer_status = check_mark if version_info['has_trainer'] else cross_mark
-            backtester_status = check_mark if version_info['has_backtester'] else cross_mark
+            trainer_status = "[YES]" if version_info['has_trainer'] else "[NO]"
+            backtester_status = "[YES]" if version_info['has_backtester'] else "[NO]"
             st.write(f"**訓練模組**: {trainer_status}")
             st.write(f"**回測模組**: {backtester_status}")
         
         st.markdown("---")
         
         # 數據信息
-        st.header("📈 數據信息")
+        st.header("數據信息")
         st.info(f"""
         **數據源**: HuggingFace
         **交易對**: {len(DataLoader.SYMBOLS)}個
