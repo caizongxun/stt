@@ -24,30 +24,30 @@ class V2Config:
     atr_sl_multiplier: float = 2.0
     atr_tp_multiplier: float = 3.0
     
-    # 標籤生成參數 - 更嚴格
-    reversal_lookforward: int = 20  # 10->20 (更長期觀察)
-    min_reversal_atr: float = 2.0   # 1.5->2.0 (更明顯反轉)
-    breakout_tolerance: float = 0.01
+    # 標籤生成參數 - 更更嚴格
+    reversal_lookforward: int = 15  # 20->15 (平衡點)
+    min_reversal_atr: float = 2.5   # 2.0->2.5 (更嚴格)
+    breakout_tolerance: float = 0.005  # 0.01->0.005 (更小容差)
     
-    # 模型參數
+    # 模型參數 - 優化
     model_type: str = "lightgbm"
-    num_leaves: int = 15
-    max_depth: int = 3
-    learning_rate: float = 0.01
-    n_estimators: int = 200
-    min_child_samples: int = 100
+    num_leaves: int = 20  # 15->20 (提高複雜度)
+    max_depth: int = 4    # 3->4
+    learning_rate: float = 0.02  # 0.01->0.02
+    n_estimators: int = 250  # 200->250
+    min_child_samples: int = 80  # 100->80
     
-    # 類別權重
+    # 類別權重 - 提高正類權重
     use_class_weight: bool = True
     class_weights: dict = None
     
-    # 預測閉值 - 更嚴格
-    predict_threshold: float = 0.75  # 0.6->0.75 (只交易高置信度)
+    # 預測閉值 - 降低到合理範圍
+    predict_threshold: float = 0.55  # 0.75->0.55 (更實際)
     
-    # 特徵工程 - 禁用歷史成功率
+    # 特徵工程
     use_technical_indicators: bool = True
     use_market_regime: bool = True
-    use_historical_success: bool = False  # True->False (移除問題特徵)
+    use_historical_success: bool = False
     
     # 回測參數
     capital: float = 10000
@@ -71,7 +71,7 @@ class V2Config:
         if self.class_weights is None and self.use_class_weight:
             self.class_weights = {
                 0: 1.0,
-                1: 2.0
+                1: 3.0  # 2.0->3.0 (提高正類權重)
             }
     
     def to_dict(self) -> dict:
