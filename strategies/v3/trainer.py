@@ -1,6 +1,6 @@
 """
 V3 Trainer
-V3训练器 - 集成XGBoost模型
+V3訓練器 - 集成XGBoost模型
 """
 import pandas as pd
 import numpy as np
@@ -16,7 +16,7 @@ from .feature_engineer import FeatureEngineer
 from .oos_validator import OOSValidator
 
 class EnsembleTrainer:
-    """集成模型训练器"""
+    """集成模型訓練器"""
     
     def __init__(self, config):
         self.config = config
@@ -25,21 +25,21 @@ class EnsembleTrainer:
     
     def train(self, df: pd.DataFrame) -> dict:
         """
-        完整训练流程
-        1. 生成信号和标签
+        完整訓練流程
+        1. 生成信號和標籤
         2. OOS分割
         3. 特徵工程
-        4. 集成训练
-        5. OOS验证
+        4. 集成訓練
+        5. OOS驗證
         """
         print("\n[V3 Ensemble Training]")
         
-        # 1. 信号生成
+        # 1. 信號生成
         print("Step 1: Generating signals...")
         signal_gen = SignalGenerator(self.config)
         df = signal_gen.generate_all_signals(df)
         
-        # 2. 标签生成
+        # 2. 標籤生成
         print("Step 2: Generating labels...")
         label_gen = LabelGenerator(self.config)
         df = label_gen.generate_labels(df)
@@ -74,7 +74,7 @@ class EnsembleTrainer:
         self.feature_names = feature_names
         print(f"  - Features: {len(feature_names)}")
         
-        # 5. 集成训练
+        # 5. 集成訓練
         print("Step 5: Training ensemble models...")
         results = self._train_ensemble(
             train_df, val_df, oos_df, feature_names
@@ -85,7 +85,7 @@ class EnsembleTrainer:
         model_path = self._save_models(results)
         print(f"  - Saved to: {model_path}")
         
-        # 7. 返回结果
+        # 7. 返回結果
         results['label_statistics'] = label_stats
         results['split_info'] = data_splits['split_info']
         results['validation_check'] = validation
@@ -95,17 +95,23 @@ class EnsembleTrainer:
     
     def _train_ensemble(self, train_df, val_df, oos_df, feature_names) -> dict:
         """
-        训练集成模型
+        訓練集成模型
         """
-        # 准备数据
-        X_train = train_df[feature_names].fillna(0)
-        y_train = train_df['label'].fillna(0)
+        # 準備數據
+        X_train = train_df[feature_names]
+        y_train = train_df['label']
         
-        X_val = val_df[feature_names].fillna(0)
-        y_val = val_df['label'].fillna(0)
+        X_val = val_df[feature_names]
+        y_val = val_df['label']
         
-        X_oos = oos_df[feature_names].fillna(0)
-        y_oos = oos_df['label'].fillna(0)
+        X_oos = oos_df[feature_names]
+        y_oos = oos_df['label']
+        
+        # 清理數據: 處理inf和nan
+        print("  - Cleaning data...")
+        X_train = self._clean_data(X_train)
+        X_val = self._clean_data(X_val)
+        X_oos = self._clean_data(X_oos)
         
         # 移除NaN行
         train_mask = ~(X_train.isna().any(axis=1) | y_train.isna())
@@ -120,14 +126,14 @@ class EnsembleTrainer:
         print(f"  - Val samples: {len(X_val)}")
         print(f"  - OOS samples: {len(X_oos)}")
         
-        # 训练多个模型
+        # 訓練多個模型
         n_models = self.config.ensemble_models if self.config.use_ensemble else 1
         self.models = []
         
         for i in range(n_models):
             print(f"  - Training model {i+1}/{n_models}...")
             
-            # XGBoost参数
+            # XGBoost參數
             params = {
                 'max_depth': self.config.max_depth,
                 'learning_rate': self.config.learning_rate,
@@ -137,8 +143,9 @@ class EnsembleTrainer:
                 'colsample_bytree': self.config.colsample_bytree,
                 'objective': 'binary:logistic',
                 'eval_metric': 'auc',
-                'random_state': 42 + i,  # 不同种子
-                'n_jobs': -1
+                'random_state': 42 + i,
+                'n_jobs': -1,
+                'missing': np.nan  # 明確設置missing值
             }
             
             model = xgb.XGBClassifier(**params)
@@ -150,11 +157,11 @@ class EnsembleTrainer:
             
             self.models.append(model)
         
-        # 集成预测
+        # 集成預測
         val_preds = self._ensemble_predict(X_val)
         oos_preds = self._ensemble_predict(X_oos)
         
-        # 评估
+        # 評估
         val_metrics = self._calculate_metrics(y_val, val_preds)
         oos_metrics = self._calculate_metrics(y_oos, oos_preds)
         
@@ -180,23 +187,46 @@ class EnsembleTrainer:
             'n_models': n_models
         }
     
+    def _clean_data(self, X: pd.DataFrame) -> pd.DataFrame:
+        """
+        清理數據: 處理inf和極端值
+        """
+        X = X.copy()
+        
+        # 替換inf為nan
+        X = X.replace([np.inf, -np.inf], np.nan)
+        
+        # 對於數值列,用中位數填充nan
+        for col in X.columns:
+            if X[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+                # 填充nan
+                median_val = X[col].median()
+                X[col] = X[col].fillna(median_val)
+                
+                # Clip極端值 (±5個標準差)
+                if X[col].std() > 0:
+                    mean = X[col].mean()
+                    std = X[col].std()
+                    X[col] = X[col].clip(mean - 5*std, mean + 5*std)
+        
+        return X
+    
     def _ensemble_predict(self, X) -> np.ndarray:
         """
-        集成预测 - 投票机制
+        集成預測 - 投票機制
         """
         if len(self.models) == 1:
             return self.models[0].predict(X)
         
         # 多模型投票
         predictions = np.array([model.predict(X) for model in self.models])
-        # 多数投票
         ensemble_pred = (predictions.mean(axis=0) >= 0.5).astype(int)
         
         return ensemble_pred
     
     def _ensemble_predict_proba(self, X) -> np.ndarray:
         """
-        集成概率预测
+        集成概率預測
         """
         if len(self.models) == 1:
             return self.models[0].predict_proba(X)[:, 1]
@@ -209,7 +239,7 @@ class EnsembleTrainer:
     
     def _calculate_metrics(self, y_true, y_pred) -> dict:
         """
-        计算评估指标
+        計算評估指標
         """
         cm = confusion_matrix(y_true, y_pred)
         tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
@@ -226,9 +256,8 @@ class EnsembleTrainer:
     
     def _get_feature_importance(self, feature_names) -> list:
         """
-        获取特徵重要性
+        獲取特徵重要性
         """
-        #平均所有模型的特徵重要性
         importance_dict = {}
         
         for model in self.models:
@@ -243,7 +272,7 @@ class EnsembleTrainer:
         # 排序
         sorted_features = sorted(avg_importance.items(), key=lambda x: x[1], reverse=True)
         
-        return sorted_features[:20]  # Top 20
+        return sorted_features[:20]
     
     def _save_models(self, results) -> Path:
         """
@@ -263,7 +292,7 @@ class EnsembleTrainer:
         # 保存特徵名
         joblib.dump(self.feature_names, model_dir / 'features.pkl')
         
-        # 保存结果
+        # 保存結果
         joblib.dump(results, model_dir / 'results.pkl')
         
         return model_dir
