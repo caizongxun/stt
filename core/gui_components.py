@@ -5,6 +5,8 @@ Reusable GUI Components
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from typing import List, Dict, Optional
+from datetime import datetime
 
 class GUIComponents:
     """
@@ -151,7 +153,7 @@ class GUIComponents:
     @staticmethod
     def render_metrics(metrics: dict):
         """
-        渲染績效指標
+        渲柕績效指標
         
         Args:
             metrics: 績效指標字典
@@ -197,3 +199,156 @@ class GUIComponents:
                 "平均虧損",
                 f"${metrics.get('avg_loss', 0):.2f}"
             )
+    
+    @staticmethod
+    def render_news_panel(
+        news_list: List[Dict],
+        show_filters: bool = True,
+        max_display: int = 20
+    ):
+        """
+        渲染新聞面板
+        
+        Args:
+            news_list: 新聞列表
+            show_filters: 是否顯示過濾器
+            max_display: 最大顯示數量
+        """
+        if not news_list:
+            st.info("📰 無新聞資料")
+            return
+        
+        st.markdown("---")
+        st.subheader("📰 最新市場新聞")
+        
+        # 過濾器
+        if show_filters:
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                # 來源過濾
+                all_sources = list(set(item['source'] for item in news_list))
+                selected_sources = st.multiselect(
+                    "來源過濾",
+                    all_sources,
+                    default=all_sources
+                )
+            
+            with col2:
+                # 分類過濾
+                all_categories = list(set(item['category'] for item in news_list))
+                selected_categories = st.multiselect(
+                    "分類過濾",
+                    all_categories,
+                    default=all_categories
+                )
+            
+            with col3:
+                # 關鍵字搜尋
+                keyword_filter = st.text_input(
+                    "🔍 關鍵字搜尋",
+                    placeholder="輸入關鍵字..."
+                )
+            
+            # 應用過濾
+            filtered_news = [
+                item for item in news_list
+                if item['source'] in selected_sources
+                and item['category'] in selected_categories
+            ]
+            
+            if keyword_filter:
+                filtered_news = [
+                    item for item in filtered_news
+                    if keyword_filter.lower() in item['title'].lower()
+                    or keyword_filter.lower() in item.get('summary', '').lower()
+                ]
+        else:
+            filtered_news = news_list
+        
+        # 顯示統計
+        col1, col2, col3 = st.columns(3)
+        col1.metric("總數", len(filtered_news))
+        col2.metric("來源數", len(set(item['source'] for item in filtered_news)))
+        
+        if filtered_news:
+            latest_time = max(item['published'] for item in filtered_news)
+            time_ago = (datetime.now() - latest_time).total_seconds() / 60
+            col3.metric("最新", f"{int(time_ago)} 分鐘前")
+        
+        st.markdown("---")
+        
+        # 顯示新聞
+        for idx, item in enumerate(filtered_news[:max_display], 1):
+            with st.expander(
+                f"📌 {item['title']}",
+                expanded=(idx == 1)  # 預設展開第一條
+            ):
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    # 內容
+                    if item.get('full_content'):
+                        st.markdown(f"**完整內容**:")
+                        st.write(item['full_content'][:500] + "...")
+                    else:
+                        st.markdown(f"**摘要**:")
+                        st.write(item.get('summary', '無摘要'))
+                    
+                    # 鏈接
+                    st.markdown(f"[🔗 閱讀全文]({item['link']})")
+                
+                with col2:
+                    # 元資料
+                    st.markdown(f"""
+                    **來源**: {item['source']}  
+                    **分類**: {item['category']}  
+                    **時間**: {item['published'].strftime('%m-%d %H:%M')}
+                    """)
+                    
+                    # 圖片
+                    if item.get('image_url'):
+                        try:
+                            st.image(item['image_url'], width=200)
+                        except:
+                            pass
+        
+        # 分頁提示
+        if len(filtered_news) > max_display:
+            st.info(f"ℹ️ 顯示前 {max_display} 條,共 {len(filtered_news)} 條新聞")
+    
+    @staticmethod
+    def render_news_statistics(news_list: List[Dict]):
+        """
+        渲染新聞統計
+        
+        Args:
+            news_list: 新聞列表
+        """
+        if not news_list:
+            return
+        
+        st.subheader("📊 新聞統計")
+        
+        # 按來源統計
+        source_counts = {}
+        category_counts = {}
+        
+        for item in news_list:
+            source = item['source']
+            category = item['category']
+            
+            source_counts[source] = source_counts.get(source, 0) + 1
+            category_counts[category] = category_counts.get(category, 0) + 1
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**按來源**")
+            for source, count in sorted(source_counts.items(), key=lambda x: x[1], reverse=True):
+                st.write(f"- {source}: {count} 條")
+        
+        with col2:
+            st.markdown("**按分類**")
+            for category, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True):
+                st.write(f"- {category}: {count} 條")
